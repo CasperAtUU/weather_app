@@ -13,6 +13,7 @@ import streamlit as st
 import urllib.request
 import json
 from datetime import datetime
+import pytz
 import time
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -22,6 +23,8 @@ API_URL = (
     "https://api.open-meteo.com/v1/forecast"
     f"?latitude={LATITUDE}&longitude={LONGITUDE}"
     "&current=temperature_2m,apparent_temperature,weathercode,windspeed_10m"
+    "&hourly=precipitation,precipitation_probability"
+    "&daily=sunrise,sunset"
     "&wind_speed_unit=ms"
     "&timezone=Europe%2FAmsterdam"
 )
@@ -55,7 +58,6 @@ WMO_CODES = {
 }
 
 
-@st.cache_data(ttl=600)  # Cache for 10 minutes
 def fetch_weather():
     """Fetch weather from Open-Meteo."""
     try:
@@ -69,13 +71,32 @@ def fetch_weather():
         code = int(cur["weathercode"])
         label, emoji = WMO_CODES.get(code, ("Unknown", "🌡️"))
         
+        # Extract sunrise/sunset (today's first entry)
+        daily = data["daily"]
+        sunrise = daily["sunrise"][0].split("T")[1][:5]  # HH:MM
+        sunset = daily["sunset"][0].split("T")[1][:5]    # HH:MM
+        
+        # Extract next 6 hours of hourly precipitation
+        hourly = data["hourly"]
+        now_idx = 0  # Current hour
+        hourly_data = []
+        for i in range(6):  # Next 6 hours
+            if now_idx + i < len(hourly["precipitation"]):
+                hourly_data.append({
+                    "precip_mm": hourly["precipitation"][now_idx + i],
+                    "prob": hourly["precipitation_probability"][now_idx + i],
+                })
+        
         return {
             "temp": round(cur["temperature_2m"]),
             "feels_like": round(cur["apparent_temperature"]),
             "wind_ms": round(cur["windspeed_10m"], 1),
             "condition": label,
             "emoji": emoji,
-            "updated": datetime.now().strftime("%H:%M"),
+            "updated": datetime.now(pytz.timezone("Europe/Amsterdam")).strftime("%H:%M"),
+            "sunrise": sunrise,
+            "sunset": sunset,
+            "hourly": hourly_data,
         }
     except Exception as e:
         return None
@@ -190,6 +211,36 @@ if data:
     with col5:
         st.metric(label="Location", value="Houten, NL")
     
+    # ── Sun times ────────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("**☀️ Sun Times (Amsterdam)**")
+    
+    sun_col1, sun_col2 = st.columns(2)
+    with sun_col1:
+        st.metric(label="Sunrise", value=data['sunrise'])
+    with sun_col2:
+        st.metric(label="Sunset", value=data['sunset'])
+    
+    # ── Rain forecast (next 6 hours) ──────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("**🌧️ Rain Forecast (Next 6 Hours)**")
+    
+    rain_data = []
+    ams_tz = pytz.timezone("Europe/Amsterdam")
+    now_ams = datetime.now(ams_tz)
+    for i, h in enumerate(data['hourly']):
+        hour = (now_ams.hour + i) % 24
+        rain_data.append({
+            "Hour": f"{hour:02d}:00",
+            "Precipitation (mm)": h['precip_mm'],
+            "Probability (%)": h['prob'],
+        })
+    
+    if rain_data:
+        import pandas as pd
+        df = pd.DataFrame(rain_data)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+    
     # Info
     st.markdown(f"""
     <div style="text-align: center; color: var(--text-secondary); font-size: 0.85rem; margin-top: 2rem;">
@@ -200,11 +251,9 @@ if data:
     
     # Refresh button
     if st.button("🔄 Refresh Now", key="refresh_btn"):
-        st.cache_data.clear()
         st.rerun()
 
 else:
     st.error("❌ Could not fetch weather data. Check your connection.")
     if st.button("Retry"):
-        st.cache_data.clear()
         st.rerun()
