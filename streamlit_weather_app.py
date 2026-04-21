@@ -239,7 +239,7 @@ if data:
     if rain_data:
         import pandas as pd
         df = pd.DataFrame(rain_data)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, width='stretch', hide_index=True)
     
     # Info
     st.markdown(f"""
