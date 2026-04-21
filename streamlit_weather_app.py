@@ -89,6 +89,15 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# ── Auto-refresh every 10 minutes ────────────────────────────────────────────
+st.markdown("""
+    <script>
+        setTimeout(function() {
+            location.reload();
+        }, 600000);  // 600000 ms = 10 minutes
+    </script>
+""", unsafe_allow_html=True)
+
 # ── Custom CSS for dark theme ───────────────────────────────────────────────
 st.markdown("""
     <style>
